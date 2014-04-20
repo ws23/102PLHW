@@ -2,118 +2,249 @@
 #include <ctype.h>
 #include <string.h>
 
+/* Global declarations */
+/* Variable */
+int charClass; 
+char lexeme[100];
+char nextChar;
+int lexLen;
+int token;
+int nextToken; 
+int fail; 
+FILE *fin;
+
+/* Function declarations */
+void addChar();
+void getChar();
+void getNonBlank();
+int lex();
 void error();
+
+/* Parser declarations */
+
 void expr();
 void term();
 void factor();
-void exp();
+void Exp();
 
-typedef struct _phrase{
-	char str[100];
-} phrase; 
+/* Character classes */
+#define LETTER 0
+#define DIGIT 1
+#define POINT 2
+#define UNKNOWN 99
 
-phrase s[100], *token;
+/* Token codes */
+#define NEWLINE 9
+#define INT_LIT 10
+#define REAL_LIT 11
+#define IDENT 12
+#define ASSIGN_OP 20
+#define ADD_OP 21
+#define SUB_OP 22
+#define MULT_OP 23
+#define DIV_OP 24
+#define EXP_OP 25
+#define LEFT_PAREN 26
+#define RIGHT_PAREN 27
+
+/***************************************************************/
 
 int main(){
-	int i, j;
-	char in[1000], *tok;
-	freopen("input.txt", "r", stdin);
-	while(gets(in)){
-		i = 0;
-		tok = strtok(in, " ");
-		while(tok != NULL){
-			strcpy(s[i].str, tok);
-			i++;
-			tok = strtok(NULL, " ");	
-		}
-		for(j=0;j<i;j++)
-			printf("phs[%d].str = %s\n", j, s[j].str);
-		token = s;
-		expr();	
-		if(token!=NULL)
-			printf("parse ok\n");
-		else
+	fin = fopen("input.txt", "r");
+	getChar();
+	do{
+		fail = 0;
+
+		lex();
+		if(nextToken==NEWLINE)
+			continue;
+		if(nextToken==EOF)
+			break;
+
+		expr();
+
+		if(nextToken!=EOF && nextToken!=NEWLINE)
+			fail = 1;
+
+		if(fail)
 			printf("parse fail\n");
-		//break;
-	}
+		else
+			printf("parse ok\n");
+	}while(nextToken!=EOF);
+
 	return 0;
 }
 
-void error(){
-	token = NULL;
+/***************************************************************/
+
+/* lookup - a function to lookup operators and parentheses and return the token */
+int lookup(char ch){
+	switch(ch){
+		case '(':
+			addChar();
+			nextToken = LEFT_PAREN;
+			break;
+		case ')':
+			addChar();
+			nextToken = RIGHT_PAREN; 
+			break;
+		case '+':
+			addChar();
+			nextToken = ADD_OP;
+			break;
+		case '-':
+			addChar();
+			nextToken = SUB_OP;
+			break;
+		case '*':
+			addChar();
+			nextToken = MULT_OP;
+			break;
+		case '/':
+			addChar();
+			nextToken = DIV_OP;
+			break;
+		case '^':
+			addChar();
+			nextToken = EXP_OP;
+			break;
+		case '\n':
+			addChar();
+			nextToken = NEWLINE;
+			break;
+		default: 
+			addChar();
+			nextToken = EOF; 
+			break;
+	}
+	return nextToken;
 }
 
-/* <expr> -> <term> { (+|-) <term> }  */
-void expr(){
-//	printf("<expr> token => %c\n", *token);
-/*	
-	term();
-	while(*token || token!=NULL){
-		if(*token=='+' || *token=='-'){
-			token++;
-			term();
-		}
+
+/* addChar - a function to add nextChar to lexeme */
+void addChar(){
+	if(lexLen<=98){
+		lexeme[lexLen++] = nextChar;
+		lexeme[lexLen] = 0;
+	}
+	else
+		printf("Error: lexeme is too long!!\n");
+}
+
+
+/* getChar - a function to get the next character of input and determine its character class */
+void getChar(){
+	if((nextChar = getc(fin))!=EOF){
+		if(isalpha(nextChar))
+			charClass = LETTER; 
+		else if(isdigit(nextChar))
+			charClass = DIGIT;
+		else if(nextChar=='.')
+			charClass = POINT;
 		else
-			error();
+			charClass = UNKNOWN; 
 	}
-//*/
-	printf("<expr> end; \n"); 
+	else
+		charClass = EOF; 
 }
 
-/* <term> -> <factor { (*|/) <factor> }> */
+/* getNonBlank - a function to call getChar until it returns a non-whitespace character */
+void getNonBlank(){
+	while(isspace(nextChar) && nextChar!='\n')
+		getChar();
+}
+
+/* lex - a simple lexical analyzer for arithmetic expressions */
+int lex(){
+	int point = 0;
+	lexLen = 0;
+	getNonBlank();
+	switch(charClass){
+		/* Parse identifires */
+		case LETTER:
+			addChar();
+			getChar();
+			while(charClass==LETTER||charClass==DIGIT){
+				addChar();
+				getChar();
+			}
+			nextToken = IDENT;
+			break;
+
+		/* Parse integer literals */
+		case DIGIT:
+			addChar();
+			getChar();
+			while(charClass==DIGIT||(charClass==POINT&&point==0)){
+				if(charClass==POINT)
+					point = 1;
+				addChar();
+				getChar();
+			}
+			if(point==1)
+				nextToken = REAL_LIT;
+			else
+				nextToken = INT_LIT;
+			break;
+		/* Parentheses and operators */
+		case UNKNOWN: 
+			lookup(nextChar);
+			getChar();
+			break;
+		/* EOF */
+		case EOF:
+			nextToken = EOF;
+			strcpy(lexeme, "EOF");
+			break;
+	}
+	return nextToken;
+}
+
+
+void error(){
+	fail = 1;
+}
+
+/****************************************************************/
+/* <expr> -> <term> { (+|-) <term> } */
+void expr(){
+	term();
+	while(nextToken==ADD_OP||nextToken==SUB_OP){
+		lex();
+		term();
+	}
+}
+
+/* <term> -> <factor> { (*|/) <factor> } */
 void term(){
-//	printf("<term> token => %c\n", *token);
-/*
 	factor();
-	while(*token=='*' || *token=='/' || token!=NULL){
-			token++;
-			factor();
+	while(nextToken==MULT_OP||nextToken==DIV_OP){
+		lex();
+		factor();
 	}
-//*/
-	printf("<term> end; \n");
 }
 
-/* <factor> -> <exp { ^ <exp> }> */
+/* <factor> -> <exp> { ^ <exp> } */
 void factor(){
-//	printf("<factor> token => %c\n", *token);
-/*
-	exp();
-	while(*token=='^' || token!=NULL){
-		token++;
-		exp();
+	Exp();
+	while(nextToken==EXP_OP){
+		lex();
+		Exp();
 	}
-//*/
-	printf("<factor> end;\n");
 }
 
 /* <exp> -> id | int_lit | real_lit | (<expr>) */
-void exp(){
-//	printf("<exp> token => %c\n", *tok);
-/*
-	if(*token=='('){
-		token++;
+void Exp(){
+	if(nextToken==IDENT||nextToken==INT_LIT||nextToken==REAL_LIT)
+		lex();
+	else if(nextToken==LEFT_PAREN){
+		lex();
 		expr();
-		if(*token!=')')
+		if(nextToken==RIGHT_PAREN)
+			lex();
+		else
 			error();
 	}
-	else if(isdigit(*token)){
-		token++;
-		while(isdigit(*token))
-			token++;
-		if(*token=='.'){
-			token++;
-			if(isdigit(*token))
-				token++;
-			else
-				error();
-			while(isdigit(*token))
-				token++;
-		}
-	}
-	else if(isalpha(*token))
-		token++;	
 	else
 		error();
-//*/		
-	printf("<exp> end;\n");
 }
